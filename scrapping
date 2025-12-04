@@ -1,0 +1,277 @@
+***
+public abstract class BaseScraper {
+    protected String targetUrl;
+    protected HttpClient httpClient;
+    protected Logger logger;
+    
+    public BaseScraper(String url) {
+        this.targetUrl = url;
+        this.httpClient = HttpClient.newHttpClient();
+        this.logger = LoggerFactory.getLogger(this.getClass());
+    }
+    
+    protected Document fetchDocument() throws IOException {
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create(targetUrl))
+            .header("User-Agent", "Mozilla/5.0")
+            .timeout(Duration.ofSeconds(10))
+            .build();
+        
+        HttpResponse<String> response = httpClient.send(request, 
+            HttpResponse.BodyHandlers.ofString());
+        
+        return Jsoup.parse(response.body());
+    }
+    
+    public abstract List<?> scrape();
+}
+
+***News Scraper Implementation:***
+
+public class NewsScraper extends BaseScraper {
+    private static final String ARTICLE_SELECTOR = "article.news-item";
+    private static final String TITLE_SELECTOR = "h2.article-title";
+    private static final String DATE_SELECTOR = "span.publish-date";
+    private static final String SUMMARY_SELECTOR = "p.article-summary";
+    private static final String AUTHOR_SELECTOR = "span.author-name";
+    private static final String URL_SELECTOR = "a.article-link";
+    
+    public NewsScraper(String url) {
+        super(url);
+    }
+    
+    @Override
+    public List<NewsArticle> scrape() {
+        List<NewsArticle> articles = new ArrayList<>();
+        
+        try {
+            Document doc = fetchDocument();
+            Elements articleElements = doc.select(ARTICLE_SELECTOR);
+            
+            for (Element article : articleElements) {
+                NewsArticle newsArticle = new NewsArticle();
+                newsArticle.setTitle(article.select(TITLE_SELECTOR).text());
+                newsArticle.setPublishDate(article.select(DATE_SELECTOR).text());
+                newsArticle.setSummary(article.select(SUMMARY_SELECTOR).text());
+                newsArticle.setAuthor(article.select(AUTHOR_SELECTOR).text());
+                newsArticle.setSourceUrl(article.select(URL_SELECTOR).attr("href"));
+                newsArticle.setScrapedAt(LocalDateTime.now());
+                
+                if (isValidArticle(newsArticle)) {
+                    articles.add(newsArticle);
+                }
+            }
+            
+            logger.info("Successfully scraped {} news articles", articles.size());
+        } catch (IOException e) {
+            logger.error("Error scraping news articles", e);
+        }
+        
+        return articles;
+    }
+    
+    private boolean isValidArticle(NewsArticle article) {
+        return article.getTitle() != null && !article.getTitle().isEmpty();
+    }
+}
+
+***Product Price Scraper Implementation:***
+
+public class PriceScraper extends BaseScraper {
+    private static final String PRODUCT_SELECTOR = "div.product-card";
+    private static final String NAME_SELECTOR = "h3.product-name";
+    private static final String PRICE_SELECTOR = "span.current-price";
+    private static final String ORIGINAL_PRICE_SELECTOR = "span.original-price";
+    private static final String AVAILABILITY_SELECTOR = "span.stock-status";
+    private static final String RATING_SELECTOR = "span.product-rating";
+    
+    public PriceScraper(String url) {
+        super(url);
+    }
+    
+    @Override
+    public List<Product> scrape() {
+        List<Product> products = new ArrayList<>();
+        
+        try {
+            Document doc = fetchDocument();
+            Elements productElements = doc.select(PRODUCT_SELECTOR);
+            
+            for (Element product : productElements) {
+                Product productItem = new Product();
+                productItem.setName(product.select(NAME_SELECTOR).text());
+                productItem.setCurrentPrice(parsePrice(
+                    product.select(PRICE_SELECTOR).text()));
+                productItem.setOriginalPrice(parsePrice(
+                    product.select(ORIGINAL_PRICE_SELECTOR).text()));
+                productItem.setAvailability(product.select(AVAILABILITY_SELECTOR).text());
+                productItem.setRating(parseRating(
+                    product.select(RATING_SELECTOR).text()));
+                productItem.setProductUrl(product.select("a").attr("href"));
+                productItem.setScrapedAt(LocalDateTime.now());
+                
+                if (isValidProduct(productItem)) {
+                    products.add(productItem);
+                }
+            }
+            
+            logger.info("Successfully scraped {} products", products.size());
+        } catch (IOException e) {
+            logger.error("Error scraping product prices", e);
+        }
+        
+        return products;
+    }
+    
+    private Double parsePrice(String priceText) {
+        try {
+            return Double.parseDouble(priceText.replaceAll("[^\\d.]", ""));
+        } catch (NumberFormatException e) {
+            return 0.0;
+        }
+    }
+    
+    private Double parseRating(String ratingText) {
+        try {
+            return Double.parseDouble(ratingText.replaceAll("[^\\d.]", ""));
+        } catch (NumberFormatException e) {
+            return 0.0;
+        }
+    }
+    
+    private boolean isValidProduct(Product product) {
+        return product.getName() != null && product.getCurrentPrice() > 0;
+    }
+}
+
+***Weather Scraper Implementation:***
+
+public class WeatherScraper extends BaseScraper {
+    private static final String TEMP_SELECTOR = "span.current-temp";
+    private static final String CONDITION_SELECTOR = "span.weather-condition";
+    private static final String HUMIDITY_SELECTOR = "span.humidity-value";
+    private static final String WIND_SELECTOR = "span.wind-speed";
+    private static final String FORECAST_SELECTOR = "div.forecast-item";
+    
+    public WeatherScraper(String url) {
+        super(url);
+    }
+    
+    @Override
+    public List<WeatherData> scrape() {
+        List<WeatherData> weatherDataList = new ArrayList<>();
+        
+        try {
+            Document doc = fetchDocument();
+            WeatherData currentWeather = new WeatherData();
+            
+            currentWeather.setTemperature(parseTemperature(
+                doc.select(TEMP_SELECTOR).text()));
+            currentWeather.setCondition(doc.select(CONDITION_SELECTOR).text());
+            currentWeather.setHumidity(parseInteger(
+                doc.select(HUMIDITY_SELECTOR).text()));
+            currentWeather.setWindSpeed(parseDouble(
+                doc.select(WIND_SELECTOR).text()));
+            currentWeather.setScrapedAt(LocalDateTime.now());
+            
+            weatherDataList.add(currentWeather);
+            
+            Elements forecastElements = doc.select(FORECAST_SELECTOR);
+            for (Element forecast : forecastElements) {
+                WeatherData forecastData = new WeatherData();
+                forecastData.setDate(forecast.attr("data-date"));
+                forecastData.setCondition(forecast.select(".condition").text());
+                weatherDataList.add(forecastData);
+            }
+            
+            logger.info("Successfully scraped weather data");
+        } catch (IOException e) {
+            logger.error("Error scraping weather data", e);
+        }
+        
+        return weatherDataList;
+    }
+    
+    private Integer parseTemperature(String tempText) {
+        return Integer.parseInt(tempText.replaceAll("[^\\d-]", ""));
+    }
+    
+    private Integer parseInteger(String text) {
+        return Integer.parseInt(text.replaceAll("[^\\d]", ""));
+    }
+    
+    private Double parseDouble(String text) {
+        return Double.parseDouble(text.replaceAll("[^\\d.]", ""));
+    }
+}
+
+***Data Models:***
+
+public class NewsArticle {
+    private String title;
+    private String publishDate;
+    private String summary;
+    private String author;
+    private String sourceUrl;
+    private LocalDateTime scrapedAt;
+    
+    // Getters and Setters
+    public String getTitle() { return title; }
+    public void setTitle(String title) { this.title = title; }
+    public String getPublishDate() { return publishDate; }
+    public void setPublishDate(String publishDate) { this.publishDate = publishDate; }
+    public String getSummary() { return summary; }
+    public void setSummary(String summary) { this.summary = summary; }
+    public String getAuthor() { return author; }
+    public void setAuthor(String author) { this.author = author; }
+    public String getSourceUrl() { return sourceUrl; }
+    public void setSourceUrl(String sourceUrl) { this.sourceUrl = sourceUrl; }
+    public LocalDateTime getScrapedAt() { return scrapedAt; }
+    public void setScrapedAt(LocalDateTime scrapedAt) { this.scrapedAt = scrapedAt; }
+}
+
+public class Product {
+    private String name;
+    private Double currentPrice;
+    private Double originalPrice;
+    private String availability;
+    private Double rating;
+    private String productUrl;
+    private LocalDateTime scrapedAt;
+    
+    // Getters and Setters (similar to NewsArticle)
+}
+
+public class WeatherData {
+    private String location;
+    private Integer temperature;
+    private String condition;
+    private Integer humidity;
+    private Double windSpeed;
+    private String date;
+    private LocalDateTime scrapedAt;
+    
+    // Getters and Setters (similar to NewsArticle)
+}
+
+
+
+public class DataExporter {
+    public static void exportToJSON(Object data, String filePath) 
+            throws IOException {
+        ObjectMapper mapper = new ObjectMapper();
+        mapper.setSerializationInclusion(JsonInclude.Include.NON_NULL);
+        String jsonString = mapper.writerWithDefaultPrettyPrinter()
+            .writeValueAsString(data);
+        
+        Files.write(Paths.get(filePath), jsonString.getBytes());
+    }
+    
+    public static void exportToCSV(List<?> data, String filePath) 
+            throws IOException {
+        try (FileWriter writer = new FileWriter(filePath)) {
+            // CSV export logic with appropriate headers and formatting
+        }
+    }
+}
+***
