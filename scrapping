@@ -1,4 +1,5 @@
 ***
+
 public abstract class BaseScraper {
     protected String targetUrl;
     protected HttpClient httpClient;
@@ -254,7 +255,7 @@ public class WeatherData {
     // Getters and Setters (similar to NewsArticle)
 }
 
-
+***Utility Class for Data Export:***
 
 public class DataExporter {
     public static void exportToJSON(Object data, String filePath) 
